@@ -45,9 +45,29 @@ def download_excel() -> Path:
     EXCEL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
-        page    = context.new_page()
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            ],
+        )
+        context = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            accept_downloads=True,
+            locale="ko-KR",
+            extra_http_headers={"Accept-Language": "ko-KR,ko;q=0.9"},
+        )
+        # navigator.webdriver 속성 제거 (자동화 감지 우회)
+        context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        )
+        page = context.new_page()
 
         # 메인 → 결과 페이지 순서로 방문해 WAF 세션 완전히 수립
         print("메인 페이지 방문 중 (WAF 통과)...")
