@@ -36,8 +36,9 @@ REQUIRED_COLS = ["round", "draw_date", "num1", "num2", "num3", "num4", "num5", "
 
 def download_excel() -> Path:
     """
-    Playwright 헤드리스 브라우저로 엑셀 파일을 다운받는다.
-    WAF 통과를 위해 메인 페이지 먼저 방문 후 다운로드 URL로 이동.
+    Playwright 브라우저 세션을 통해 엑셀 파일을 다운받는다.
+    - 메인 페이지 방문으로 WAF 통과 및 세션 쿠키 획득
+    - context.request로 동일 세션에서 파일 직접 수신 (download 이벤트 불필요)
     """
     from playwright.sync_api import sync_playwright
 
@@ -45,20 +46,33 @@ def download_excel() -> Path:
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(accept_downloads=True)
+        context = browser.new_context()
         page    = context.new_page()
 
-        # WAF 챌린지 통과를 위해 메인 페이지 먼저 방문
+        # WAF 챌린지 통과 — 메인 페이지에서 JS 실행 후 쿠키 획득
         print("메인 페이지 방문 중 (WAF 통과)...")
         page.goto("https://dhlottery.co.kr/", wait_until="networkidle")
 
-        # 엑셀 다운로드 트리거
-        print(f"엑셀 다운로드 시작: {EXCEL_URL}")
-        with page.expect_download(timeout=60_000) as dl:
-            page.goto(EXCEL_URL)
+        # 결과 페이지도 한번 방문해 세션 강화
+        page.goto("https://dhlottery.co.kr/gameResult.do?method=allWin", wait_until="networkidle")
 
-        download = dl.value
-        download.save_as(str(EXCEL_PATH))
+        # 브라우저 세션 쿠키를 그대로 사용해 파일 요청
+        print(f"파일 요청 중: {EXCEL_URL}")
+        response = context.request.get(
+            EXCEL_URL,
+            headers={"Referer": "https://dhlottery.co.kr/gameResult.do?method=allWin"},
+        )
+
+        if not response.ok:
+            raise RuntimeError(f"다운로드 실패: HTTP {response.status}")
+
+        content = response.body()
+
+        # HTML이 반환된 경우 (WAF 미통과) 감지
+        if content[:5] in (b"<html", b"\n\n\n\n\n", b"<!DOC"):
+            raise RuntimeError("엑셀이 아닌 HTML 페이지가 반환됐습니다. WAF 통과 실패.")
+
+        EXCEL_PATH.write_bytes(content)
         browser.close()
 
     size_kb = EXCEL_PATH.stat().st_size // 1024
