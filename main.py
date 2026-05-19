@@ -90,6 +90,17 @@ def run_train():
     run_all_models(df)
 
 
+def run_recommend():
+    from src.database import load_from_db
+    from src.models import recommend_numbers
+
+    df = load_from_db()
+    if df.empty:
+        print("데이터가 없습니다. --download 를 먼저 실행하세요.")
+        sys.exit(1)
+    recommend_numbers(df)
+
+
 def run_all():
     run_download()
     run_analyze()
@@ -105,8 +116,9 @@ def main():
     parser.add_argument("--download", action="store_true", help="xlsx 초기 로드 + API 신규 회차 추가")
     parser.add_argument("--info",     action="store_true", help="DB 상태 출력")
     parser.add_argument("--analyze",  action="store_true", help="통계 분석 및 시각화")
-    parser.add_argument("--train",    action="store_true", help="ML 모델 학습")
-    parser.add_argument("--all",      action="store_true", help="전체 파이프라인 실행")
+    parser.add_argument("--train",     action="store_true", help="ML 모델 학습")
+    parser.add_argument("--recommend", action="store_true", help="당첨 예상 번호 6개 추천")
+    parser.add_argument("--all",       action="store_true", help="전체 파이프라인 실행")
 
     args = parser.parse_args()
 
@@ -117,8 +129,9 @@ def main():
     if args.download: run_download()
     if args.info:     run_info()
     if args.analyze:  run_analyze()
-    if args.train:    run_train()
-    if args.all:      run_all()
+    if args.train:     run_train()
+    if args.recommend: run_recommend()
+    if args.all:       run_all()
 
 
 if __name__ == "__main__":

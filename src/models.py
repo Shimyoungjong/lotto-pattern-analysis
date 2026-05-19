@@ -5,9 +5,12 @@
 - Apriori: 자주 함께 등장하는 번호 조합 연관규칙 분석
 """
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 
@@ -21,11 +24,16 @@ from sklearn.decomposition import PCA
 from mlxtend.frequent_patterns import apriori, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 
-import matplotlib
-matplotlib.use("Agg")
+def _set_korean_font():
+    candidates = ["Malgun Gothic", "NanumGothic", "NanumBarunGothic", "DejaVu Sans"]
+    available = {f.name for f in fm.fontManager.ttflist}
+    for font in candidates:
+        if font in available:
+            plt.rcParams["font.family"] = font
+            break
+    plt.rcParams["axes.unicode_minus"] = False
 
-plt.rcParams["font.family"] = "Malgun Gothic"
-plt.rcParams["axes.unicode_minus"] = False
+_set_korean_font()
 
 BASE_DIR    = Path(__file__).parent.parent
 FIGURES_DIR = BASE_DIR / "outputs" / "figures"
@@ -245,3 +253,149 @@ def run_all_models(df: pd.DataFrame) -> None:
     run_kmeans(df)
     run_apriori(df)
     print("\n========== ML 모델 분석 완료 ==========")
+
+
+# ──────────────────────────────────────────────
+# 번호 추천
+# ──────────────────────────────────────────────
+
+def _normalize(arr: np.ndarray) -> np.ndarray:
+    mn, mx = arr.min(), arr.max()
+    return (arr - mn) / (mx - mn + 1e-9)
+
+
+def _top6(scores: np.ndarray) -> list[int]:
+    """scores[1..45] 기준 상위 6개 번호를 정렬해서 반환."""
+    return sorted((np.argsort(scores[1:])[::-1][:6] + 1).tolist())
+
+
+def _rf_scores(df: pd.DataFrame) -> np.ndarray:
+    """각 번호가 다음 회차에 등장할 RF 확률 (1-indexed, 인덱스 0 미사용)."""
+    from sklearn.multioutput import MultiOutputClassifier
+
+    print("  [RF] 학습 중 (약 30초)...")
+    one_hot = _to_one_hot(df)
+    WINDOW  = 10
+
+    X, Y = [], []
+    for i in range(WINDOW, len(one_hot)):
+        X.append(one_hot.iloc[i - WINDOW:i].values.flatten())
+        Y.append(one_hot.iloc[i].values)
+    X, Y = np.array(X), np.array(Y)
+
+    clf = MultiOutputClassifier(
+        RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1),
+        n_jobs=-1,
+    )
+    clf.fit(X, Y)
+
+    X_latest = one_hot.iloc[-WINDOW:].values.flatten().reshape(1, -1)
+    proba = np.array([
+        est.predict_proba(X_latest)[0][1] if len(est.classes_) > 1 else 0.0
+        for est in clf.estimators_
+    ])
+
+    scores = np.zeros(46)
+    scores[1:] = proba
+    return _normalize(scores)
+
+
+def _kmeans_scores(df: pd.DataFrame) -> np.ndarray:
+    """최근 20회차가 주로 속한 클러스터의 번호 등장 빈도."""
+    print("  [K-Means] 클러스터 분석 중...")
+    one_hot = _to_one_hot(df)
+    scaler  = StandardScaler()
+    X_scaled = scaler.fit_transform(one_hot)
+
+    kmeans = KMeans(n_clusters=5, random_state=42, n_init=10)
+    labels = kmeans.fit_predict(X_scaled)
+
+    recent_cluster = pd.Series(labels[-20:]).value_counts().index[0]
+    cluster_data   = df[NUM_COLS][labels == recent_cluster]
+
+    scores = np.zeros(46)
+    for num in range(1, 46):
+        scores[num] = (cluster_data.values == num).sum()
+    return _normalize(scores)
+
+
+def _apriori_scores(df: pd.DataFrame) -> np.ndarray:
+    """Apriori 빈발 아이템셋에서 각 번호의 누적 support."""
+    print("  [Apriori] 연관규칙 분석 중...")
+    transactions = df[NUM_COLS].apply(
+        lambda r: [str(n) for n in sorted(r)], axis=1
+    ).tolist()
+
+    te     = TransactionEncoder()
+    te_df  = pd.DataFrame(te.fit_transform(transactions), columns=te.columns_)
+    freq   = apriori(te_df, min_support=0.01, use_colnames=True)
+
+    scores = np.zeros(46)
+    for _, row in freq.iterrows():
+        for item in row["itemsets"]:
+            scores[int(item)] += row["support"]
+    return _normalize(scores)
+
+
+def _plot_recommendation(rf: np.ndarray, km: np.ndarray,
+                         ap: np.ndarray, combined: np.ndarray,
+                         final_6: list[int]) -> None:
+    nums = np.arange(1, 46)
+
+    rf_top6 = _top6(rf)
+    km_top6 = _top6(km)
+    ap_top6 = _top6(ap)
+
+    fig, axes = plt.subplots(2, 2, figsize=(18, 10))
+    fig.suptitle("로또 번호 추천 분석", fontsize=16, fontweight="bold")
+
+    configs = [
+        (rf[1:],       "Random Forest 확률",   "#3498DB", rf_top6),
+        (km[1:],       "K-Means 클러스터",     "#E74C3C", km_top6),
+        (ap[1:],       "Apriori 연관규칙",     "#2ECC71", ap_top6),
+        (combined[1:], "★ 최종 통합 추천",     "#9B59B6", final_6),
+    ]
+    for ax, (scores, title, color, top6) in zip(axes.flat, configs):
+        bar_colors = [color if n in top6 else "#D5D8DC" for n in nums]
+        ax.bar(nums, scores, color=bar_colors, edgecolor="white", linewidth=0.4)
+        ax.set_title(title, fontsize=12, fontweight="bold")
+        ax.set_xlabel("번호")
+        ax.set_ylabel("점수")
+        ax.set_xticks(range(1, 46, 2))
+        for n in top6:
+            ax.text(n, scores[n - 1] + 0.01, str(n),
+                    ha="center", va="bottom", fontsize=7, fontweight="bold", color=color)
+
+    plt.tight_layout()
+    path = FIGURES_DIR / "recommendation.png"
+    plt.savefig(path, dpi=150)
+    plt.close()
+    print(f"  저장: {path}")
+
+
+def recommend_numbers(df: pd.DataFrame) -> dict:
+    """RF + K-Means + Apriori 결합으로 당첨 예상 번호 6개 추천."""
+    print("\n========== 번호 추천 시작 ==========")
+
+    rf  = _rf_scores(df)
+    km  = _kmeans_scores(df)
+    ap  = _apriori_scores(df)
+
+    # 가중 합산: RF 40% + KMeans 30% + Apriori 30%
+    combined = _normalize(rf * 0.4 + km * 0.3 + ap * 0.3)
+
+    rf_top6  = _top6(rf)
+    km_top6  = _top6(km)
+    ap_top6  = _top6(ap)
+    final_6  = _top6(combined)
+
+    print(f"\n  [Random Forest]  {rf_top6}")
+    print(f"  [K-Means]        {km_top6}")
+    print(f"  [Apriori]        {ap_top6}")
+    print(f"\n  ★ 최종 추천 번호: {final_6}")
+
+    _plot_recommendation(rf, km, ap, combined, final_6)
+    print("\n========== 번호 추천 완료 ==========")
+
+    return {"random_forest": rf_top6, "kmeans": km_top6,
+            "apriori": ap_top6, "final": final_6}
