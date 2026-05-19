@@ -36,10 +36,11 @@ REQUIRED_COLS = ["round", "draw_date", "num1", "num2", "num3", "num4", "num5", "
 
 def download_excel() -> Path:
     """
-    Playwright 브라우저 세션을 통해 엑셀 파일을 다운받는다.
-    - 메인 페이지 방문으로 WAF 통과 및 세션 쿠키 획득
-    - context.request로 동일 세션에서 파일 직접 수신 (download 이벤트 불필요)
+    Playwright 브라우저 내부의 JS fetch()로 엑셀을 다운받는다.
+    context.request / page.goto 방식은 WAF 재검사에 걸리므로,
+    이미 WAF를 통과한 브라우저 페이지 컨텍스트에서 직접 fetch() 실행.
     """
+    import base64
     from playwright.sync_api import sync_playwright
 
     EXCEL_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -49,32 +50,39 @@ def download_excel() -> Path:
         context = browser.new_context()
         page    = context.new_page()
 
-        # WAF 챌린지 통과 — 메인 페이지에서 JS 실행 후 쿠키 획득
-        # networkidle 대신 domcontentloaded 사용 (광고 스크립트로 인해 networkidle 미달성)
+        # 메인 → 결과 페이지 순서로 방문해 WAF 세션 완전히 수립
         print("메인 페이지 방문 중 (WAF 통과)...")
         page.goto("https://dhlottery.co.kr/", wait_until="domcontentloaded", timeout=90_000)
-        page.wait_for_timeout(3_000)  # WAF JS 챌린지 실행 대기
+        page.wait_for_timeout(3_000)
 
-        # 결과 페이지도 한번 방문해 세션 강화
+        print("결과 페이지 방문 중...")
         page.goto("https://dhlottery.co.kr/gameResult.do?method=allWin",
                   wait_until="domcontentloaded", timeout=90_000)
         page.wait_for_timeout(2_000)
 
-        # 브라우저 세션 쿠키를 그대로 사용해 파일 요청 (타임아웃 2분)
-        print(f"파일 요청 중: {EXCEL_URL}")
-        response = context.request.get(
-            EXCEL_URL,
-            headers={"Referer": "https://dhlottery.co.kr/gameResult.do?method=allWin"},
-            timeout=120_000,
-        )
+        # 브라우저 내부 JS fetch()로 파일 요청 → base64로 반환
+        # 동일 브라우저 세션이므로 WAF 재검사 없음
+        print(f"브라우저 내부 fetch 실행 중: {EXCEL_URL}")
+        b64 = page.evaluate("""
+            async (url) => {
+                const res = await fetch(url, {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: { 'Referer': 'https://dhlottery.co.kr/gameResult.do?method=allWin' }
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const buf = await res.arrayBuffer();
+                const bytes = new Uint8Array(buf);
+                let bin = '';
+                for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+                return btoa(bin);
+            }
+        """, EXCEL_URL)
 
-        if not response.ok:
-            raise RuntimeError(f"다운로드 실패: HTTP {response.status}")
+        content = base64.b64decode(b64)
 
-        content = response.body()
-
-        # HTML이 반환된 경우 (WAF 미통과) 감지
-        if content[:5] in (b"<html", b"\n\n\n\n\n", b"<!DOC"):
+        # HTML이 반환된 경우 감지
+        if content[:8].lstrip(b"\n")[:5] in (b"<html", b"<!DOC"):
             raise RuntimeError("엑셀이 아닌 HTML 페이지가 반환됐습니다. WAF 통과 실패.")
 
         EXCEL_PATH.write_bytes(content)
