@@ -34,6 +34,9 @@ jobs:
       - name: 통계 분석 및 시각화
         run: python main.py --analyze
 
+      - name: 번호 추천
+        run: python main.py --recommend
+
       - name: 변경사항 커밋 & 푸시
         run: |
           git config user.name  "github-actions[bot]"
