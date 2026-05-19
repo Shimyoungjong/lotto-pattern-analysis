@@ -21,6 +21,9 @@ from sklearn.decomposition import PCA
 from mlxtend.frequent_patterns import apriori, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 
+import matplotlib
+matplotlib.use("Agg")
+
 plt.rcParams["font.family"] = "Malgun Gothic"
 plt.rcParams["axes.unicode_minus"] = False
 
