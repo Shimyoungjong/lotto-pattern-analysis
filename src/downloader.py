@@ -50,11 +50,15 @@ def download_excel() -> Path:
         page    = context.new_page()
 
         # WAF 챌린지 통과 — 메인 페이지에서 JS 실행 후 쿠키 획득
+        # networkidle 대신 domcontentloaded 사용 (광고 스크립트로 인해 networkidle 미달성)
         print("메인 페이지 방문 중 (WAF 통과)...")
-        page.goto("https://dhlottery.co.kr/", wait_until="networkidle")
+        page.goto("https://dhlottery.co.kr/", wait_until="domcontentloaded", timeout=90_000)
+        page.wait_for_timeout(3_000)  # WAF JS 챌린지 실행 대기
 
         # 결과 페이지도 한번 방문해 세션 강화
-        page.goto("https://dhlottery.co.kr/gameResult.do?method=allWin", wait_until="networkidle")
+        page.goto("https://dhlottery.co.kr/gameResult.do?method=allWin",
+                  wait_until="domcontentloaded", timeout=90_000)
+        page.wait_for_timeout(2_000)
 
         # 브라우저 세션 쿠키를 그대로 사용해 파일 요청
         print(f"파일 요청 중: {EXCEL_URL}")
