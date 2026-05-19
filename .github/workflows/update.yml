@@ -25,10 +25,10 @@ jobs:
       - name: 패키지 설치
         run: pip install -r requirements.txt
 
-      - name: API 데이터 수집 및 DB 업데이트
+      - name: 데이터 업데이트 (xlsx 초기 로드 + API 신규 회차)
         run: python main.py --download
 
-      - name: 통계 분석 및 시각화 실행
+      - name: 통계 분석 및 시각화
         run: python main.py --analyze
 
       - name: 변경사항 커밋 & 푸시
