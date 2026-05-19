@@ -34,23 +34,25 @@ COLUMN_MAP = {
 REQUIRED_COLS = ["round", "draw_date", "num1", "num2", "num3", "num4", "num5", "num6", "bonus"]
 
 
-def download_excel() -> Path:
+def download_excel(headless: bool = False) -> Path:
     """
-    Playwright 브라우저 내부의 JS fetch()로 엑셀을 다운받는다.
-    context.request / page.goto 방식은 WAF 재검사에 걸리므로,
-    이미 WAF를 통과한 브라우저 페이지 컨텍스트에서 직접 fetch() 실행.
+    Playwright로 동행복권 allWinExel 엑셀을 다운받는다.
+    headless=False 로 실행하면 실제 브라우저 창이 열려 디버깅에 유용.
     """
+    import random
     from playwright.sync_api import sync_playwright
 
     EXCEL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
-            headless=True,
+            headless=headless,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
+                "--disable-infobars",
+                "--disable-extensions",
             ],
         )
         context = browser.new_context(
@@ -59,25 +61,29 @@ def download_excel() -> Path:
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
+            viewport={"width": 1920, "height": 1080},
             accept_downloads=True,
             locale="ko-KR",
-            extra_http_headers={"Accept-Language": "ko-KR,ko;q=0.9"},
+            extra_http_headers={"Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8"},
         )
-        # navigator.webdriver 속성 제거 (자동화 감지 우회)
-        context.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-        )
+        # navigator.webdriver 제거 + 자동화 흔적 추가 제거
+        context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            window.chrome = { runtime: {} };
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['ko-KR', 'ko']});
+        """)
         page = context.new_page()
 
-        # 메인 → 결과 페이지 순서로 방문해 WAF 세션 완전히 수립
+        # 메인 → 결과 페이지 순서로 방문해 WAF 세션 수립
         print("메인 페이지 방문 중 (WAF 통과)...")
         page.goto("https://dhlottery.co.kr/", wait_until="domcontentloaded", timeout=90_000)
-        page.wait_for_timeout(3_000)
+        page.wait_for_timeout(random.randint(2_500, 4_000))
 
         print("결과 페이지 방문 중...")
         page.goto("https://dhlottery.co.kr/gameResult.do?method=allWin",
                   wait_until="domcontentloaded", timeout=90_000)
-        page.wait_for_timeout(2_000)
+        page.wait_for_timeout(random.randint(1_500, 3_000))
         print(f"현재 URL : {page.url}")
         print(f"현재 타이틀: {page.title()}")
 
@@ -174,7 +180,7 @@ def _find_header_row(df: pd.DataFrame) -> int:
     return 0
 
 
-def download_and_parse() -> pd.DataFrame:
+def download_and_parse(headless: bool = False) -> pd.DataFrame:
     """다운로드 + 파싱을 순서대로 실행해 DataFrame을 반환한다."""
-    path = download_excel()
+    path = download_excel(headless=headless)
     return parse_excel(path)

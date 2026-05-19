@@ -15,13 +15,13 @@ import argparse
 import sys
 
 
-def run_download():
-    """동행복권 allWinExel 에서 엑셀 다운로드 후 DB 저장. CI 환경 전용."""
+def run_download(headless: bool = False):
+    """동행복권 allWinExel 에서 엑셀 다운로드 후 DB 저장."""
     from src.downloader import download_and_parse
     from src.database import save_to_db
 
     print("=== 엑셀 다운로드 → DB 저장 ===")
-    df = download_and_parse()
+    df = download_and_parse(headless=headless)
     save_to_db(df)
 
 
@@ -86,7 +86,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--download",  action="store_true", help="엑셀 다운로드 후 DB 저장 (CI용)")
+    parser.add_argument("--download",  action="store_true", help="엑셀 다운로드 후 DB 저장")
+    parser.add_argument("--headless",  action="store_true", help="브라우저를 헤드리스 모드로 실행 (CI용)")
     parser.add_argument("--load",      action="store_true", help="로컬 CSV를 DB에 로드")
     parser.add_argument("--info",      action="store_true", help="DB 상태 출력")
     parser.add_argument("--analyze",   action="store_true", help="통계 분석 및 시각화")
@@ -100,7 +101,7 @@ def main():
         parser.print_help()
         sys.exit(0)
 
-    if args.download:  run_download()
+    if args.download:  run_download(headless=args.headless)
     if args.load:      run_load()
     if args.info:      run_info()
     if args.analyze:   run_analyze()

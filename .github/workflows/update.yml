@@ -24,7 +24,7 @@ jobs:
         run: python -m playwright install chromium
 
       - name: 엑셀 다운로드 및 DB 업데이트
-        run: python main.py --download
+        run: python main.py --download --headless
 
       - name: 통계 분석 및 시각화 실행
         run: python main.py --analyze
