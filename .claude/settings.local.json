@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.dhlottery.co.kr)",
+      "PowerShell(Get-ChildItem \"c:\\\\Users\\\\tla56\\\\Desktop\\\\lotto_project\" -Recurse | Where-Object { !$_.PSIsContainer } | Select-Object -ExpandProperty FullName)",
+      "PowerShell(python --version)",
+      "PowerShell(python -m pip --version)",
+      "PowerShell(pip --version)",
+      "WebFetch(domain:www.data.go.kr)",
+      "WebSearch",
+      "WebFetch(domain:idencosmos.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\tla56\\\\Desktop\\\\lotto_project\\\\.github\\\\workflows\")",
+      "PowerShell(winget install --id Git.Git -e --source winget)",
+      "PowerShell($env:PATH = [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"User\"\\); cd \"c:\\\\Users\\\\tla56\\\\Desktop\\\\lotto_project\"; git --version)",
+      "PowerShell($env:PATH = [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"User\"\\); cd \"c:\\\\Users\\\\tla56\\\\Desktop\\\\lotto_project\"; git init; git add .; git commit -m \"init: 로또 번호 분석 프로젝트\")"
+    ]
+  }
+}

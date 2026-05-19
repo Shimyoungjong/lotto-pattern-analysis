@@ -1,0 +1,18 @@
+# 다운로드된 원본 엑셀 (크고 불필요, DB로 변환 후 삭제)
+data/lotto_raw.xlsx
+data/lotto_raw.xls
+data/lotto_input.csv
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# VSCode
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
