@@ -58,9 +58,10 @@ def download_excel() -> Path:
         page.goto("https://dhlottery.co.kr/gameResult.do?method=allWin",
                   wait_until="domcontentloaded", timeout=90_000)
         page.wait_for_timeout(2_000)
-        print(f"현재 페이지: {page.title()}")
+        print(f"현재 URL : {page.url}")
+        print(f"현재 타이틀: {page.title()}")
 
-        # 엑셀 다운로드 버튼/링크 탐색 (우선순위 순)
+        # 엑셀 다운로드 버튼/링크 탐색
         selectors = [
             "a[href*='allWinExel']",
             "a:has-text('엑셀')",
@@ -81,9 +82,9 @@ def download_excel() -> Path:
             if btn:
                 btn.click()
             else:
-                # 버튼을 못 찾으면 페이지 내에서 JS로 URL 이동
-                print("버튼 없음 → JS navigate 방식으로 시도...")
-                page.evaluate(f"window.location.href = '{EXCEL_URL}'")
+                # wait_until="commit" — 파일 응답이 시작되면 바로 반환
+                print("버튼 없음 → page.goto commit 방식으로 시도...")
+                page.goto(EXCEL_URL, wait_until="commit", timeout=120_000)
 
         download = dl.value
         download.save_as(str(EXCEL_PATH))
