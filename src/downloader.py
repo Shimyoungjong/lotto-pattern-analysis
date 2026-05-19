@@ -40,7 +40,6 @@ def download_excel() -> Path:
     context.request / page.goto 방식은 WAF 재검사에 걸리므로,
     이미 WAF를 통과한 브라우저 페이지 컨텍스트에서 직접 fetch() 실행.
     """
-    import base64
     from playwright.sync_api import sync_playwright
 
     EXCEL_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -59,33 +58,35 @@ def download_excel() -> Path:
         page.goto("https://dhlottery.co.kr/gameResult.do?method=allWin",
                   wait_until="domcontentloaded", timeout=90_000)
         page.wait_for_timeout(2_000)
+        print(f"현재 페이지: {page.title()}")
 
-        # 브라우저 내부 JS fetch()로 파일 요청 → base64로 반환
-        # 동일 브라우저 세션이므로 WAF 재검사 없음
-        print(f"브라우저 내부 fetch 실행 중: {EXCEL_URL}")
-        b64 = page.evaluate("""
-            async (url) => {
-                const res = await fetch(url, {
-                    method: 'GET',
-                    credentials: 'include',
-                    headers: { 'Referer': 'https://dhlottery.co.kr/gameResult.do?method=allWin' }
-                });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const buf = await res.arrayBuffer();
-                const bytes = new Uint8Array(buf);
-                let bin = '';
-                for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-                return btoa(bin);
-            }
-        """, EXCEL_URL)
+        # 엑셀 다운로드 버튼/링크 탐색 (우선순위 순)
+        selectors = [
+            "a[href*='allWinExel']",
+            "a:has-text('엑셀')",
+            "input[value*='엑셀']",
+            "button:has-text('엑셀')",
+            "a:has-text('다운로드')",
+        ]
+        btn = None
+        for sel in selectors:
+            el = page.locator(sel)
+            if el.count() > 0:
+                print(f"버튼 발견: {sel}")
+                btn = el.first
+                break
 
-        content = base64.b64decode(b64)
+        print("다운로드 시작...")
+        with page.expect_download(timeout=120_000) as dl:
+            if btn:
+                btn.click()
+            else:
+                # 버튼을 못 찾으면 페이지 내에서 JS로 URL 이동
+                print("버튼 없음 → JS navigate 방식으로 시도...")
+                page.evaluate(f"window.location.href = '{EXCEL_URL}'")
 
-        # HTML이 반환된 경우 감지
-        if content[:8].lstrip(b"\n")[:5] in (b"<html", b"<!DOC"):
-            raise RuntimeError("엑셀이 아닌 HTML 페이지가 반환됐습니다. WAF 통과 실패.")
-
-        EXCEL_PATH.write_bytes(content)
+        download = dl.value
+        download.save_as(str(EXCEL_PATH))
         browser.close()
 
     size_kb = EXCEL_PATH.stat().st_size // 1024
