@@ -361,7 +361,8 @@ def _plot_recommendation(rf: np.ndarray, km: np.ndarray,
         ax.set_title(title, fontsize=12, fontweight="bold")
         ax.set_xlabel("번호")
         ax.set_ylabel("점수")
-        ax.set_xticks(range(1, 46, 2))
+        ax.set_xticks(range(1, 46))
+        ax.tick_params(axis="x", labelsize=7)
         for n in top6:
             ax.text(n, scores[n - 1] + 0.01, str(n),
                     ha="center", va="bottom", fontsize=7, fontweight="bold", color=color)
