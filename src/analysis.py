@@ -6,6 +6,8 @@
 - 연속번호 패턴
 """
 
+import matplotlib
+matplotlib.use("Agg")  # 헤드리스 환경(GitHub Actions) 대응
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,9 +16,17 @@ import seaborn as sns
 from pathlib import Path
 from typing import Tuple
 
-# 한글 폰트 설정 (Windows 기준 맑은 고딕)
-plt.rcParams["font.family"] = "Malgun Gothic"
-plt.rcParams["axes.unicode_minus"] = False
+# 한글 폰트: Windows=맑은고딕, Linux=나눔고딕 또는 기본 폰트
+def _set_korean_font():
+    candidates = ["Malgun Gothic", "NanumGothic", "NanumBarunGothic", "DejaVu Sans"]
+    available = {f.name for f in fm.fontManager.ttflist}
+    for font in candidates:
+        if font in available:
+            plt.rcParams["font.family"] = font
+            break
+    plt.rcParams["axes.unicode_minus"] = False
+
+_set_korean_font()
 
 BASE_DIR    = Path(__file__).parent.parent
 FIGURES_DIR = BASE_DIR / "outputs" / "figures"
