@@ -45,8 +45,12 @@ def download_excel(headless: bool = False) -> Path:
     EXCEL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as p:
+        # 설치된 Edge 경로
+        EDGE_PATH = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+
         browser = p.chromium.launch(
             headless=headless,
+            executable_path=EDGE_PATH,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
