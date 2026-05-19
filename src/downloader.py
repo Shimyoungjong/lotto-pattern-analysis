@@ -1,190 +1,84 @@
 """
-Playwright로 동행복권 allWinExel URL에서 전체 당첨번호 엑셀을 다운받는 모듈.
-GitHub Actions 환경에서만 실행 (로컬 Playwright 설치 불필요).
+동행복권 공식 API로 당첨번호를 수집하는 모듈.
+URL: https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo={회차}
 """
 
+import time
+import requests
 import pandas as pd
 from pathlib import Path
 
-BASE_DIR   = Path(__file__).parent.parent
-EXCEL_PATH = BASE_DIR / "data" / "lotto_raw.xlsx"
-EXCEL_URL  = "https://dhlottery.co.kr/gameResult.do?method=allWinExel"
-
-# 엑셀 컬럼명 → 내부 표준 컬럼명 매핑
-COLUMN_MAP = {
-    "회차":       "round",
-    "날짜":       "draw_date",
-    "추첨일":     "draw_date",
-    "1번":        "num1",
-    "2번":        "num2",
-    "3번":        "num3",
-    "4번":        "num4",
-    "5번":        "num5",
-    "6번":        "num6",
-    "번호1":      "num1",
-    "번호2":      "num2",
-    "번호3":      "num3",
-    "번호4":      "num4",
-    "번호5":      "num5",
-    "번호6":      "num6",
-    "보너스번호":  "bonus",
-    "보너스":     "bonus",
+BASE_DIR = Path(__file__).parent.parent
+API_URL  = "https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo={}"
+HEADERS  = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Referer":    "https://www.dhlottery.co.kr/",
 }
 
-REQUIRED_COLS = ["round", "draw_date", "num1", "num2", "num3", "num4", "num5", "num6", "bonus"]
 
-
-def download_excel(headless: bool = False) -> Path:
-    """
-    Playwright로 동행복권 allWinExel 엑셀을 다운받는다.
-    headless=False 로 실행하면 실제 브라우저 창이 열려 디버깅에 유용.
-    """
-    import random
-    from playwright.sync_api import sync_playwright
-
-    EXCEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    with sync_playwright() as p:
-        # 설치된 Edge 경로
-        EDGE_PATH = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-
-        browser = p.chromium.launch(
-            headless=headless,
-            executable_path=EDGE_PATH,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-infobars",
-                "--disable-extensions",
-            ],
-        )
-        context = browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1920, "height": 1080},
-            accept_downloads=True,
-            locale="ko-KR",
-            extra_http_headers={"Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8"},
-        )
-        # navigator.webdriver 제거 + 자동화 흔적 추가 제거
-        context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            window.chrome = { runtime: {} };
-            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
-            Object.defineProperty(navigator, 'languages', {get: () => ['ko-KR', 'ko']});
-        """)
-        page = context.new_page()
-
-        # 메인 → 결과 페이지 순서로 방문해 WAF 세션 수립
-        print("메인 페이지 방문 중 (WAF 통과)...")
-        page.goto("https://dhlottery.co.kr/", wait_until="domcontentloaded", timeout=90_000)
-        page.wait_for_timeout(random.randint(2_500, 4_000))
-
-        print("결과 페이지 방문 중...")
-        page.goto("https://dhlottery.co.kr/gameResult.do?method=allWin",
-                  wait_until="domcontentloaded", timeout=90_000)
-        page.wait_for_timeout(random.randint(1_500, 3_000))
-        print(f"현재 URL : {page.url}")
-        print(f"현재 타이틀: {page.title()}")
-
-        # 엑셀 다운로드 버튼/링크 탐색
-        selectors = [
-            "a[href*='allWinExel']",
-            "a:has-text('엑셀')",
-            "input[value*='엑셀']",
-            "button:has-text('엑셀')",
-            "a:has-text('다운로드')",
-        ]
-        btn = None
-        for sel in selectors:
-            el = page.locator(sel)
-            if el.count() > 0:
-                print(f"버튼 발견: {sel}")
-                btn = el.first
-                break
-
-        print("다운로드 시작...")
-        with page.expect_download(timeout=120_000) as dl:
-            if btn:
-                btn.click()
-            else:
-                # wait_until="commit" — 파일 응답이 시작되면 바로 반환
-                print("버튼 없음 → page.goto commit 방식으로 시도...")
-                page.goto(EXCEL_URL, wait_until="commit", timeout=120_000)
-
-        download = dl.value
-        download.save_as(str(EXCEL_PATH))
-        browser.close()
-
-    size_kb = EXCEL_PATH.stat().st_size // 1024
-    print(f"다운로드 완료: {EXCEL_PATH.name} ({size_kb} KB)")
-    return EXCEL_PATH
-
-
-def parse_excel(path: Path = EXCEL_PATH) -> pd.DataFrame:
-    """엑셀을 읽어 표준 컬럼명으로 정규화된 DataFrame을 반환한다."""
-    # .xlsx / .xls 순으로 엔진 시도
-    df_raw = None
-    for engine in ("openpyxl", "xlrd"):
+def fetch_latest_round() -> int:
+    """이진 탐색으로 현재 최신 회차를 찾는다."""
+    lo, hi = 1, 2000
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
         try:
-            df_raw = pd.read_excel(path, engine=engine, header=None)
-            break
+            data = requests.get(API_URL.format(mid), headers=HEADERS, timeout=10).json()
+            if data.get("returnValue") == "success":
+                lo = mid
+            else:
+                hi = mid - 1
         except Exception:
-            continue
+            hi = mid - 1
+    print(f"최신 회차: {lo}")
+    return lo
 
-    if df_raw is None:
-        raise ValueError(f"엑셀 파일을 읽을 수 없습니다: {path}")
 
-    # '회차' 문자열이 있는 행을 헤더로 사용
-    header_idx = _find_header_row(df_raw)
-    df_raw.columns = df_raw.iloc[header_idx].astype(str).str.strip()
-    df = df_raw.iloc[header_idx + 1:].reset_index(drop=True)
+def _fetch_one(drw_no: int) -> dict | None:
+    for attempt in range(3):
+        try:
+            data = requests.get(API_URL.format(drw_no), headers=HEADERS, timeout=10).json()
+            if data.get("returnValue") == "success":
+                return {
+                    "round":     int(data["drwNo"]),
+                    "draw_date": str(data["drwNoDate"]),
+                    "num1":      int(data["drwtNo1"]),
+                    "num2":      int(data["drwtNo2"]),
+                    "num3":      int(data["drwtNo3"]),
+                    "num4":      int(data["drwtNo4"]),
+                    "num5":      int(data["drwtNo5"]),
+                    "num6":      int(data["drwtNo6"]),
+                    "bonus":     int(data["bnusNo"]),
+                }
+            return None
+        except Exception as e:
+            if attempt == 2:
+                print(f"  {drw_no}회차 실패: {e}")
+            time.sleep(1)
+    return None
 
-    # 표준 컬럼명으로 변환
-    df = df.rename(columns=COLUMN_MAP)
 
-    missing = [c for c in REQUIRED_COLS if c not in df.columns]
-    if missing:
-        raise ValueError(
-            f"필수 컬럼 없음: {missing}\n"
-            f"현재 컬럼: {df.columns.tolist()}"
-        )
+def fetch_rounds(start: int, end: int) -> pd.DataFrame:
+    """start~end 회차를 API로 수집해 DataFrame으로 반환."""
+    rows = []
+    for drw_no in range(start, end + 1):
+        row = _fetch_one(drw_no)
+        if row:
+            rows.append(row)
+        time.sleep(0.15)
+        if drw_no % 100 == 0:
+            print(f"수집 중: {drw_no}/{end}회차")
 
-    df = df[REQUIRED_COLS].copy()
+    if not rows:
+        raise ValueError(f"{start}~{end} 회차 수집 결과 없음")
 
-    # 타입 정규화
-    df["round"]     = pd.to_numeric(df["round"], errors="coerce")
-    df["draw_date"] = df["draw_date"].astype(str).str.strip()
-    for col in ["num1", "num2", "num3", "num4", "num5", "num6", "bonus"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    # 결측·범위 이탈 행 제거
-    df = df.dropna()
-    num_cols = ["num1", "num2", "num3", "num4", "num5", "num6", "bonus"]
-    mask = df[num_cols].apply(lambda col: col.between(1, 45)).all(axis=1)
-    df   = df[mask].reset_index(drop=True)
-
-    for col in ["round"] + num_cols:
-        df[col] = df[col].astype(int)
-
+    df = pd.DataFrame(rows)
     df = df.sort_values("round").reset_index(drop=True)
-    print(f"파싱 완료: {len(df)}회차 ({df['round'].min()}~{df['round'].max()}회차)")
+    print(f"수집 완료: {len(df)}회차 ({df['round'].min()}~{df['round'].max()}회차)")
     return df
 
 
-def _find_header_row(df: pd.DataFrame) -> int:
-    """'회차' 문자열이 포함된 행 인덱스를 반환한다. 없으면 0."""
-    for i, row in df.iterrows():
-        if any("회차" in str(v) for v in row.values):
-            return i
-    return 0
-
-
-def download_and_parse(headless: bool = False) -> pd.DataFrame:
-    """다운로드 + 파싱을 순서대로 실행해 DataFrame을 반환한다."""
-    path = download_excel(headless=headless)
-    return parse_excel(path)
+def download_and_parse(start: int = 1, end: int = None) -> pd.DataFrame:
+    """전체 또는 지정 범위 회차를 수집해 DataFrame으로 반환."""
+    if end is None:
+        end = fetch_latest_round()
+    return fetch_rounds(start, end)

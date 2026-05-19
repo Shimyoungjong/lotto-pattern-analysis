@@ -69,6 +69,21 @@ def get_latest_round() -> int:
     return result if result is not None else 0
 
 
+def upsert_to_db(df: pd.DataFrame) -> int:
+    """새 회차만 DB에 추가/갱신 (INSERT OR REPLACE)."""
+    if df.empty:
+        return 0
+    cols = ["round", "draw_date", "num1", "num2", "num3", "num4", "num5", "num6", "bonus"]
+    placeholders = ",".join(["?"] * len(cols))
+    sql = f"INSERT OR REPLACE INTO lotto_results ({','.join(cols)}) VALUES ({placeholders})"
+    conn = get_connection()
+    conn.executemany(sql, df[cols].values.tolist())
+    conn.commit()
+    conn.close()
+    print(f"DB 저장 완료: {len(df)}회차")
+    return len(df)
+
+
 def get_db_info() -> dict:
     """DB 상태 요약 정보를 반환한다."""
     conn = get_connection()
