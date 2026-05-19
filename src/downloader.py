@@ -60,11 +60,12 @@ def download_excel() -> Path:
                   wait_until="domcontentloaded", timeout=90_000)
         page.wait_for_timeout(2_000)
 
-        # 브라우저 세션 쿠키를 그대로 사용해 파일 요청
+        # 브라우저 세션 쿠키를 그대로 사용해 파일 요청 (타임아웃 2분)
         print(f"파일 요청 중: {EXCEL_URL}")
         response = context.request.get(
             EXCEL_URL,
             headers={"Referer": "https://dhlottery.co.kr/gameResult.do?method=allWin"},
+            timeout=120_000,
         )
 
         if not response.ok:
