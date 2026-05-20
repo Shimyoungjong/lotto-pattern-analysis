@@ -224,3 +224,7 @@ GitHub Actions를 통해 **매주 토요일 23:00 KST** 에 자동으로 실행�
 ---
 
 > **데이터 출처**: [동행복권](https://www.dhlottery.co.kr) 공식 API 및 당첨 결과 데이터
+
+---
+
+> 이 프로젝트는 [Claude (Anthropic)](https://claude.ai)의 도움을 받아 개발되었습니다.
